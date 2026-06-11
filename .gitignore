@@ -1,0 +1,7 @@
+.venv/
+outputs/
+**pycache**/
+*.pyc
+.env
+chroma_db/
+.vscode/
