@@ -1,56 +1,123 @@
-# ContentCraft AI 🎬
+# 🎬 ContentCraft AI
 
-> **Turn any topic into a narrated AI-generated video — in one prompt.**
+> **Turn any topic into a fully narrated, AI-generated video — in one prompt.**
 
-A production-grade multimodal AI agent built with LangGraph orchestration, FLUX image generation, Coqui TTS, BLIP-2 self-evaluation, and MoviePy video assembly. Deployed on HuggingFace Spaces.
+[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph-7F77DD)](https://www.langchain.com/langgraph)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Gradio](https://img.shields.io/badge/UI-Gradio-FF6B6B?logo=gradio&logoColor=white)](https://gradio.app/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+ContentCraft AI is an autonomous multimodal agent that takes a single topic and produces a complete narrated video — it writes the script, generates scene artwork, synthesizes voiceover, **self-evaluates its own visuals**, and assembles everything into a final video. No manual editing required.
+
+> 🖥️ Runs locally via Docker / FastAPI + Gradio — see [Quick start](#-quick-start) below.
 
 ---
 
-## What makes this an *agent* (not just a pipeline)
+
+
+## 🤖 What makes this an *agent* (not just a pipeline)
 
 | Feature | How it works |
 |---|---|
-| **Dynamic tool dispatch** | LangGraph graph decides which tools to call and in what order |
-| **Self-evaluation loop** | BLIP-2 captions each generated image; cosine similarity vs. original prompt triggers a retry if score < 0.35 |
-| **Memory** | ChromaDB persists past topic→script pairs; similar topics get seeded context for variety |
-| **Parallel execution** | Image gen and audio run concurrently across scenes |
-| **Async job queue** | FastAPI background tasks + polling — UI never blocks |
+| 🧠 **Dynamic tool dispatch** | LangGraph graph decides which tools to call and in what order |
+| 🔁 **Self-evaluation loop** | BLIP-2 captions each generated image; cosine similarity vs. the original prompt triggers a retry if the score falls below `0.35` |
+| 💾 **Memory** | ChromaDB persists past topic→script pairs; similar topics get seeded context for variety |
+| ⚡ **Parallel execution** | Image generation and audio synthesis run concurrently across scenes |
+| 📡 **Async job queue** | FastAPI background tasks + polling — the UI never blocks |
 
 ---
 
-## Architecture
+## 🗺️ Architecture
 
 ```
-Topic input
-    │
-    ▼
-LangGraph Orchestrator  ←──→  ChromaDB Memory
-    │
-    ├──► Script Writer (Gemini 1.5 Flash)
-    ├──► Image Generator (FLUX.1-schnell / HF Inference API)  ← parallel
-    ├──► TTS (Coqui TTS)                                       ← parallel
-    │
-    ▼
-Self-Evaluator (BLIP-2 + cosine similarity)
-    │
-    ├── score < 0.35 → Retry image gen
-    │
-    ▼
-Video Assembler (MoviePy)
-    │
-    ▼
-FastAPI backend  →  Gradio UI  →  HuggingFace Spaces
+                         ┌─────────────────────┐
+                         │      Topic input      │
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                  ┌──────────────────────────────────┐
+                  │      LangGraph Orchestrator        │◄──────┐
+                  └──────────────────┬─────────────────┘       │
+                                     │                          │
+        ┌────────────────┬──────────┴──────────┬───────────┐   │
+        ▼                ▼                     ▼           │   │
+┌───────────────┐ ┌─────────────────┐  ┌───────────────┐    │   │
+│ Script Writer │ │ Image Generator  │  │      TTS       │    │   │
+│ (Gemini 1.5    │ │ (FLUX.1-schnell │  │  (Coqui TTS)   │    │   │
+│   Flash)       │ │   via HF API)   │  │                │    │   │
+└───────┬───────┘ └────────┬─────────┘  └───────┬────────┘    │   │
+        │                  │  (parallel)        │             │   │
+        │                  ▼                    │             │   │
+        │        ┌───────────────────────┐      │             │   │
+        │        │     Self-Evaluator      │      │             │   │
+        │        │  (BLIP-2 + cosine sim)  │      │             │   │
+        │        └──────────┬──────────────┘      │             │   │
+        │                   │                     │             │   │
+        │           score < 0.35?                 │             │   │
+        │              │         │                │             │   │
+        │            yes        no                │             │   │
+        │              │         │                │             │   │
+        │              ▼         ▼                │             │   │
+        │         ┌─────────┐  (continue)         │             │   │
+        │         │  Retry   │                    │             │   │
+        │         │ image gen│                    │             │   │
+        │         └────┬────┘                     │             │   │
+        │              └──────────────┐           │             │   │
+        │                             ▼           ▼             │   │
+        │                  ┌─────────────────────────┐          │   │
+        └─────────────────►│     Video Assembler       │         │   │
+                            │        (MoviePy)          │        │   │
+                            └────────────┬─────────────┘         │   │
+                                         │                        │   │
+                                         ▼                        │   │
+                            ┌─────────────────────────┐          │   │
+                            │     FastAPI backend       │──────────┘   │
+                            │ /generate /status         │              │
+                            │ /download /health          │             │
+                            └────────────┬─────────────┘               │
+                                         │                              │
+                                         ▼                              │
+                            ┌─────────────────────────┐                │
+                            │       Gradio UI           │               │
+                            └────────────┬─────────────┘                │
+                                         │                               │
+                                         ▼                               │
+                            ┌─────────────────────────┐                 │
+                            │   HuggingFace Spaces       │◄───────────────┘
+                            │       (Docker)             │
+                            └─────────────────────────┘
+
+     ChromaDB Memory ◄──────► LangGraph Orchestrator
+     (persists topic → script pairs for context reuse)
 ```
 
 ---
 
-## Quick start
+## ⚙️ How it works
+
+1. Enter a **topic** — e.g. *"How does a heart attack occur?"*
+2. Choose a **style**:
+   - 🎓 Clear & Engaging — great for explainers
+   - 🎬 Dramatic & Visually Rich — think Netflix doc
+   - 📋 Factual & Authoritative — neutral tone
+3. Pick the **number of scenes**
+4. Hit **Generate Video** — the LangGraph orchestrator takes over:
+   - 📝 Script Writer breaks the topic into per-scene narration
+   - 🖼️ Image Generator + 🎙️ TTS run in **parallel** per scene
+   - 🔍 Self-Evaluator checks each image against its prompt, **retrying low-scoring ones**
+   - 🎞️ Video Assembler stitches narration, images, and audio into a final MP4
+5. Watch live progress via the async status bar, then preview & download
+
+---
+
+## 🚀 Quick start
 
 ### 1. Clone
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/contentcraft-ai
-cd contentcraft-ai
+git clone https://github.com/nehawawale07/ContentCraft-AI
+cd ContentCraft-AI
 ```
 
 ### 2. Set environment variables
@@ -62,9 +129,9 @@ GEMINI_API_KEY=your_gemini_api_key_here
 HF_API_KEY=your_huggingface_api_key_here
 ```
 
-Get them free at:
-- Gemini: https://aistudio.google.com/app/apikey
-- HuggingFace: https://huggingface.co/settings/tokens
+Get free keys at:
+- Gemini → https://aistudio.google.com/app/apikey
+- HuggingFace → https://huggingface.co/settings/tokens
 
 ### 3. Install & run locally
 
@@ -73,24 +140,11 @@ pip install -r requirements.txt
 bash start.sh
 ```
 
-Then open http://localhost:7860
-
-### 4. Deploy to HuggingFace Spaces
-
-1. Create a new Space at https://huggingface.co/spaces
-2. Select **Docker** as the SDK
-3. Push this repo to the Space:
-   ```bash
-   git remote add space https://huggingface.co/spaces/YOUR_USERNAME/contentcraft-ai
-   git push space main
-   ```
-4. Add your secrets in Space Settings → Repository secrets:
-   - `GEMINI_API_KEY`
-   - `HF_API_KEY`
+Then open **http://localhost:7860** 🎉
 
 ---
 
-## Project structure
+## 📁 Project structure
 
 ```
 contentcraft-ai/
@@ -103,6 +157,7 @@ contentcraft-ai/
 │   │   └── main.py       # FastAPI: /generate /status /download /health
 │   └── ui/
 │       └── gradio_app.py # Gradio interface with live scene gallery
+├── docs/                  # Screenshots, GIFs, diagrams for README
 ├── Dockerfile
 ├── start.sh
 ├── requirements.txt
@@ -111,7 +166,7 @@ contentcraft-ai/
 
 ---
 
-## Tech stack
+## 🧰 Tech stack
 
 | Component | Library | Why |
 |---|---|---|
@@ -121,33 +176,39 @@ contentcraft-ai/
 | Text-to-speech | Coqui TTS | Lightweight, CPU-friendly, open source |
 | Self-evaluation | BLIP-2 + sentence-transformers | Caption → cosine similarity retry loop |
 | Memory | ChromaDB | Persistent vector store, zero setup |
-| Video assembly | MoviePy | Battle-tested, good FFmpeg wrapper |
-| Backend | FastAPI + uvicorn | Async, OpenAPI docs auto-generated |
-| UI | Gradio 4 | HF Spaces native, multimodal widgets |
-| Deployment | HuggingFace Spaces (Docker) | Free, public URL, GPU optional |
+| Video assembly | MoviePy | Battle-tested FFmpeg wrapper |
+| Backend | FastAPI + uvicorn | Async, auto-generated OpenAPI docs |
+| UI | Gradio 4 | Local web UI, multimodal widgets |
+| Containerization | Docker | Reproducible local setup |
 
 ---
 
-## Example outputs
+## 🎯 Example outputs
 
 | Topic | Style | Scenes |
 |---|---|---|
-| How black holes form | Documentary | 5 |
+| How does a heart attack occur? | Dramatic & visually rich | 2 |
 | The French Revolution | Cinematic | 6 |
 | Photosynthesis explained | Educational | 4 |
 
 ---
 
-## Resume bullet
 
-> **ContentCraft AI** — Agentic multimodal pipeline using LangGraph orchestration, FLUX.1-schnell image generation, Coqui TTS narration, and MoviePy video assembly. Features a BLIP-2 + cosine similarity self-evaluation retry loop, ChromaDB persistent memory, FastAPI async job backend, and Gradio UI deployed on HuggingFace Spaces.
 
 ---
 
-## Contributing
+## 🛣️ Roadmap / Contributing
 
-PRs welcome. Ideas:
-- Add Whisper ASR for voice topic input
-- Support image-to-video with AnimateDiff
-- Add subtitle overlay with word-level timestamps
-- MLflow experiment tracking per generation
+PRs welcome! Some ideas:
+
+- [ ] Add Whisper ASR for voice topic input
+- [ ] Support image-to-video with AnimateDiff
+- [ ] Add subtitle overlay with word-level timestamps
+- [ ] MLflow experiment tracking per generation
+- [ ] Improve narration text overlay accuracy
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
